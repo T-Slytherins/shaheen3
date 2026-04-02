@@ -1,0 +1,26 @@
+id: shaheen-cors
+info:
+  name: "CORS Misconfiguration"
+  author: Professor Snape
+  severity: high
+  description: Detects permissive CORS policies that allow arbitrary origins
+  tags: cors,misconfiguration,owasp-a05
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    headers:
+      Origin: "https://evil.com"
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "Access-Control-Allow-Origin: https://evil.com"
+          - "Access-Control-Allow-Origin: *"
+        condition: or
+      - type: word
+        part: header
+        words:
+          - "Access-Control-Allow-Credentials: true"

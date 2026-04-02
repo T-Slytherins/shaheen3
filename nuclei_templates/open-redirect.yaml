@@ -1,0 +1,21 @@
+id: shaheen-open-redirect
+info:
+  name: "Open Redirect Detection"
+  author: Professor Snape
+  severity: medium
+  description: Detects open redirect vulnerabilities
+  tags: redirect,owasp-a01
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/?next=https://evil.com"
+      - "{{BaseURL}}/?url=https://evil.com"
+      - "{{BaseURL}}/?redirect=//evil.com"
+      - "{{BaseURL}}/?goto=https://evil.com"
+      - "{{BaseURL}}/?return=https://evil.com"
+    matchers:
+      - type: regex
+        part: header
+        regex:
+          - "(?i)Location:.*evil\.com"

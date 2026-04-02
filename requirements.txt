@@ -1,0 +1,43 @@
+# ─────────────────────────────────────────────
+#  Shaheen 3 — Python Requirements
+#  Install: pip install -r requirements.txt
+# ─────────────────────────────────────────────
+
+# Core networking & HTTP
+requests>=2.31.0
+urllib3>=2.0.0
+
+# DNS
+dnspython>=2.4.0
+
+# Async support
+aiohttp>=3.9.0
+
+# REST API
+flask>=3.0.0
+flask-cors>=4.0.0
+
+# Data / parsing
+python-whois>=0.9.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# Concurrency
+concurrent-futures-extra>=0.1.0; python_version < '3.9'
+
+# Scheduling
+schedule>=1.2.0
+
+# Progress display
+rich>=13.0.0
+tqdm>=4.66.0
+
+# Reporting
+jinja2>=3.1.0
+
+# SSL
+pyOpenSSL>=23.0.0
+
+# Utilities
+colorama>=0.4.6
+python-dotenv>=1.0.0

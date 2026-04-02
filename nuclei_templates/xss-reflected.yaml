@@ -1,0 +1,31 @@
+id: shaheen-xss-reflected
+info:
+  name: "Reflected XSS Detection"
+  author: Professor Snape
+  severity: high
+  description: Detects reflected cross-site scripting vulnerabilities
+  tags: xss,reflected,owasp-a03
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/?q=<script>alert(document.domain)</script>"
+      - "{{BaseURL}}/?search=<img+src=x+onerror=alert(1)>"
+      - "{{BaseURL}}/?id=<svg+onload=alert(1)>"
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<script>alert(document.domain)</script>"
+          - "<img src=x onerror=alert(1)>"
+          - "<svg onload=alert(1)>"
+        condition: or
+      - type: status
+        status:
+          - 200
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "<script>.*?</script>"

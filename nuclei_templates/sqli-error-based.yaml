@@ -1,0 +1,31 @@
+id: shaheen-sqli-error
+info:
+  name: "SQL Injection — Error Based"
+  author: Professor Snape
+  severity: critical
+  description: Detects SQL injection via database error messages
+  tags: sqli,injection,owasp-a03,database
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/?id='"
+      - "{{BaseURL}}/?id=1'"
+      - "{{BaseURL}}/?q=1 AND 1=1--"
+      - "{{BaseURL}}/?q=1' OR '1'='1"
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "SQL syntax"
+          - "mysql_fetch"
+          - "ORA-01756"
+          - "Microsoft OLE DB"
+          - "ODBC SQL Server Driver"
+          - "SQLite3::query"
+          - "pg_query"
+          - "Warning: pg_"
+          - "supplied argument is not"
+          - "Unclosed quotation mark"
+        condition: or

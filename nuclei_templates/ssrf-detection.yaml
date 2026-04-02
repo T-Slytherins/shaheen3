@@ -1,0 +1,30 @@
+id: shaheen-ssrf
+info:
+  name: "Server-Side Request Forgery (SSRF)"
+  author: Professor Snape
+  severity: critical
+  description: Detects SSRF vulnerabilities including cloud metadata access
+  tags: ssrf,owasp-a10,cloud
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/?url=http://169.254.169.254/latest/meta-data/"
+      - "{{BaseURL}}/?url=http://127.0.0.1"
+      - "{{BaseURL}}/?redirect=http://169.254.169.254/"
+      - "{{BaseURL}}/?proxy=http://localhost:22"
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "ami-id"
+          - "instance-id"
+          - "security-credentials"
+          - "local-ipv4"
+        condition: or
+      - type: regex
+        part: body
+        regex:
+          - "SSH-[0-9]+"
+          - "AKI[A-Z0-9]{16}"

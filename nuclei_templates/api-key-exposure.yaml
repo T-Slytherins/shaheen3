@@ -1,0 +1,29 @@
+id: shaheen-api-keys
+info:
+  name: "API Key and Secret Exposure"
+  author: Professor Snape
+  severity: critical
+  description: Detects hardcoded API keys, tokens, and secrets in responses
+  tags: secrets,exposure,api-key
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+      - "{{BaseURL}}/js/main.js"
+      - "{{BaseURL}}/js/app.js"
+      - "{{BaseURL}}/js/config.js"
+      - "{{BaseURL}}/static/js/main.chunk.js"
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - "AKIA[0-9A-Z]{16}"
+          - "AIza[0-9A-Za-z_\-]{35}"
+          - "sk_live_[0-9a-zA-Z]{24}"
+          - "sk_test_[0-9a-zA-Z]{24}"
+          - "ghp_[0-9a-zA-Z]{36}"
+          - "glpat-[0-9a-zA-Z_-]{20}"
+          - "SG\.[0-9A-Za-z\-_]{22}\.[0-9A-Za-z\-_]{43}"
+          - "-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----"
+        condition: or

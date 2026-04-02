@@ -1,0 +1,15 @@
+{
+  "_comment": "Rename to config.json and pass with --config config.json",
+  "timeout":           15,
+  "threads":           20,
+  "rate":              200,
+  "depth":             4,
+  "ports":             "1-65535",
+  "nuclei_severity":   "critical,high,medium,low",
+  "proxy":             null,
+  "wordlist":          null,
+  "screenshots":       true,
+  "waf_bypass":        false,
+  "user_agent":        "Mozilla/5.0 (X11; Linux x86_64) Shaheen3/1.0",
+  "dns_resolvers":     ["8.8.8.8", "1.1.1.1", "9.9.9.9", "208.67.222.222"]
+}

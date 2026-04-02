@@ -1,0 +1,41 @@
+id: shaheen-sensitive-files
+info:
+  name: "Sensitive File Exposure"
+  author: Professor Snape
+  severity: high
+  description: Detects publicly accessible sensitive files and configurations
+  tags: exposure,disclosure,owasp-a05
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.env"
+      - "{{BaseURL}}/.git/config"
+      - "{{BaseURL}}/.git/HEAD"
+      - "{{BaseURL}}/backup.sql"
+      - "{{BaseURL}}/db.sql"
+      - "{{BaseURL}}/config.php.bak"
+      - "{{BaseURL}}/wp-config.php.bak"
+      - "{{BaseURL}}/.aws/credentials"
+      - "{{BaseURL}}/web.config"
+      - "{{BaseURL}}/phpinfo.php"
+      - "{{BaseURL}}/server-status"
+      - "{{BaseURL}}/config.yml"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "DB_PASSWORD"
+          - "APP_KEY"
+          - "aws_access_key_id"
+          - "secret_key"
+          - "password"
+          - "[core]"
+          - "phpinfo()"
+          - "MySQL"
+          - "Server Version"
+        condition: or

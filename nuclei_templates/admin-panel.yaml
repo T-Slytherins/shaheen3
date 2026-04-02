@@ -1,0 +1,43 @@
+id: shaheen-admin-panel
+info:
+  name: "Admin Panel Discovery"
+  author: Professor Snape
+  severity: medium
+  description: Discovers exposed admin interfaces and management panels
+  tags: admin,panel,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/admin"
+      - "{{BaseURL}}/administrator"
+      - "{{BaseURL}}/admin/login"
+      - "{{BaseURL}}/wp-admin"
+      - "{{BaseURL}}/wp-login.php"
+      - "{{BaseURL}}/manager"
+      - "{{BaseURL}}/cpanel"
+      - "{{BaseURL}}/phpmyadmin"
+      - "{{BaseURL}}/adminer.php"
+      - "{{BaseURL}}/admin.php"
+      - "{{BaseURL}}/panel"
+      - "{{BaseURL}}/controlpanel"
+      - "{{BaseURL}}:8080/manager/html"
+      - "{{BaseURL}}/jenkins"
+      - "{{BaseURL}}/grafana"
+      - "{{BaseURL}}/kibana"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+          - 301
+          - 302
+      - type: word
+        part: body
+        words:
+          - "login"
+          - "username"
+          - "password"
+          - "admin"
+          - "dashboard"
+        condition: or
