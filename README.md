@@ -63,7 +63,7 @@
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/yourusername/shaheen3.git
+git clone https://github.com/T-Slytherins/shaheen3.git
 cd shaheen3
 
 # 2. Run the automated setup (installs all tools + Python env)
