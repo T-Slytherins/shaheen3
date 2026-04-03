@@ -24,287 +24,252 @@ echo -e "${RESET}"
 
 # ── Detect OS ─────────────────────────────────────────────────
 IS_KALI=false
-IS_UBUNTU=false
-if grep -qi "kali" /etc/os-release 2>/dev/null; then
-    IS_KALI=true
-elif grep -qi "ubuntu\|debian" /etc/os-release 2>/dev/null; then
-    IS_UBUNTU=true
-fi
+grep -qi "kali" /etc/os-release 2>/dev/null && IS_KALI=true
 
 # ── 1. System packages ────────────────────────────────────────
 step "Updating package lists..."
 sudo apt-get update -qq
 
 step "Installing system dependencies..."
-# Base packages (always)
 sudo apt-get install -y -qq \
     python3 python3-pip python3-venv \
-    nmap whois dnsutils curl wget git unzip \
+    nmap whois dnsutils curl wget git unzip tar \
     2>/dev/null || true
 
-# Browser for screenshots — Kali uses 'chromium', Ubuntu uses 'chromium-browser'
-if $IS_KALI; then
-    sudo apt-get install -y -qq chromium 2>/dev/null && ok "chromium installed" \
-        || warn "chromium install failed — screenshots will use gowitness fallback"
-else
-    sudo apt-get install -y -qq chromium-browser 2>/dev/null \
-        || sudo apt-get install -y -qq chromium 2>/dev/null \
-        || warn "chromium not available — screenshots will use gowitness fallback"
-fi
+# Browser — Kali uses 'chromium', Ubuntu uses 'chromium-browser'
+sudo apt-get install -y -qq chromium 2>/dev/null \
+    || sudo apt-get install -y -qq chromium-browser 2>/dev/null \
+    || warn "No chromium found — screenshots fall back to gowitness"
 
 ok "System packages done"
 
-# ── 2. Go environment ─────────────────────────────────────────
-export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
+# ── 2. Go path ────────────────────────────────────────────────
+export GOPATH="$HOME/go"
+export PATH=$PATH:/usr/local/go/bin:$GOPATH/bin
+mkdir -p "$GOPATH/bin"
 
-if ! command -v go &>/dev/null; then
-    step "Installing Go 1.21..."
-    GO_VER="1.21.5"
-    wget -q "https://go.dev/dl/go${GO_VER}.linux-amd64.tar.gz" -O /tmp/go.tar.gz
-    sudo tar -C /usr/local -xzf /tmp/go.tar.gz
-    echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' >> ~/.bashrc
-    export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
-    ok "Go ${GO_VER} installed"
-else
+if command -v go &>/dev/null; then
     ok "Go: $(go version)"
+else
+    warn "Go not found — install from https://go.dev/dl/"
 fi
 
-mkdir -p "$HOME/go/bin"
-export GOPATH="$HOME/go"
-export PATH=$PATH:$GOPATH/bin
+# ── 3. ProjectDiscovery tools — apt repo (most reliable) ──────
+step "Adding ProjectDiscovery apt repository..."
+if ! grep -q "packages.projectdiscovery.io" /etc/apt/sources.list.d/*.list 2>/dev/null; then
+    curl -fsSL https://packages.projectdiscovery.io/linux/main/dists/Release.gpg \
+        | sudo gpg --dearmor -o /usr/share/keyrings/projectdiscovery-archive-keyring.gpg 2>/dev/null \
+        && echo "deb [signed-by=/usr/share/keyrings/projectdiscovery-archive-keyring.gpg] \
+https://packages.projectdiscovery.io/linux/main stable main" \
+        | sudo tee /etc/apt/sources.list.d/projectdiscovery.list > /dev/null \
+        && sudo apt-get update -qq 2>/dev/null \
+        && ok "ProjectDiscovery repo added" \
+        || warn "PD repo setup failed — will use direct binary download"
+fi
 
-# ── 3. Helper: install binary from GitHub releases ────────────
-install_binary() {
+# Try apt install for PD tools first
+for tool in nuclei subfinder httpx katana dnsx; do
+    if command -v "$tool" &>/dev/null; then
+        ok "$tool already installed"
+    else
+        sudo apt-get install -y -qq "$tool" 2>/dev/null \
+            && ok "$tool installed via apt" \
+            || true   # fallback handled below
+    fi
+done
+
+# ── 4. Direct binary download fallback ────────────────────────
+# Hardcoded stable versions — updated April 2025
+NUCLEI_VER="3.3.2"
+SUBFINDER_VER="2.6.6"
+HTTPX_VER="1.6.9"
+KATANA_VER="1.1.2"
+DNSX_VER="1.2.1"
+GW_VER="3.0.5"
+ARCH="linux_amd64"
+PD_BASE="https://github.com/projectdiscovery"
+
+download_pd_tool() {
     local name="$1"
-    local release_url="$2"
-    local archive_name="$3"
-    local binary_in_archive="$4"
+    local ver="$2"
+    local repo="$3"
+    local zipname="${name}_${ver}_${ARCH}.zip"
+    local url="${PD_BASE}/${repo}/releases/download/v${ver}/${zipname}"
 
     if command -v "$name" &>/dev/null; then
         ok "$name already installed"
-        return
+        return 0
     fi
 
-    step "Installing $name from GitHub releases..."
-    local tmp_dir
-    tmp_dir=$(mktemp -d)
-
-    if wget -q "$release_url" -O "$tmp_dir/$archive_name"; then
-        cd "$tmp_dir"
-        if [[ "$archive_name" == *.zip ]]; then
-            unzip -q "$archive_name"
+    step "Downloading $name v${ver}..."
+    local tmp
+    tmp=$(mktemp -d)
+    if wget -q --timeout=60 "$url" -O "$tmp/$zipname" 2>/dev/null; then
+        unzip -q "$tmp/$zipname" -d "$tmp" 2>/dev/null || true
+        local bin
+        bin=$(find "$tmp" -maxdepth 2 -name "$name" -type f | head -1)
+        if [[ -n "$bin" ]]; then
+            chmod +x "$bin"
+            sudo mv "$bin" /usr/local/bin/"$name"
+            ok "$name v${ver} installed"
         else
-            tar -xzf "$archive_name"
+            warn "$name: binary not found in archive"
         fi
-
-        local bin_path
-        bin_path=$(find "$tmp_dir" -name "$binary_in_archive" -type f | head -1)
-        if [[ -n "$bin_path" ]]; then
-            chmod +x "$bin_path"
-            sudo mv "$bin_path" /usr/local/bin/"$name"
-            ok "$name installed → /usr/local/bin/$name"
-        else
-            warn "$name binary not found in archive — skip"
-        fi
-        cd - > /dev/null
     else
-        warn "$name download failed — install manually"
+        warn "$name: download failed (check internet / firewall)"
     fi
-    rm -rf "$tmp_dir"
+    rm -rf "$tmp"
 }
 
-# ── 4. Go-based security tools (binary releases) ──────────────
-step "Installing security tools via pre-built binaries..."
+download_pd_tool "nuclei"    "$NUCLEI_VER"    "nuclei"
+download_pd_tool "subfinder" "$SUBFINDER_VER" "subfinder"
+download_pd_tool "httpx"     "$HTTPX_VER"     "httpx"
+download_pd_tool "katana"    "$KATANA_VER"    "katana"
+download_pd_tool "dnsx"      "$DNSX_VER"      "dnsx"
 
-ARCH="linux_amd64"
-
-# ── nuclei ──
-if ! command -v nuclei &>/dev/null; then
-    NUCLEI_VER=$(curl -s https://api.github.com/repos/projectdiscovery/nuclei/releases/latest \
-        | grep '"tag_name"' | cut -d'"' -f4 | tr -d 'v' 2>/dev/null || echo "3.2.4")
-    install_binary "nuclei" \
-        "https://github.com/projectdiscovery/nuclei/releases/latest/download/nuclei_${NUCLEI_VER}_${ARCH}.zip" \
-        "nuclei_${NUCLEI_VER}_${ARCH}.zip" \
-        "nuclei"
-else
-    ok "nuclei already installed"
-fi
-
-# ── subfinder ──
-if ! command -v subfinder &>/dev/null; then
-    SF_VER=$(curl -s https://api.github.com/repos/projectdiscovery/subfinder/releases/latest \
-        | grep '"tag_name"' | cut -d'"' -f4 | tr -d 'v' 2>/dev/null || echo "2.6.6")
-    install_binary "subfinder" \
-        "https://github.com/projectdiscovery/subfinder/releases/latest/download/subfinder_${SF_VER}_${ARCH}.zip" \
-        "subfinder_${SF_VER}_${ARCH}.zip" \
-        "subfinder"
-else
-    ok "subfinder already installed"
-fi
-
-# ── httpx ──
-if ! command -v httpx &>/dev/null; then
-    HTTPX_VER=$(curl -s https://api.github.com/repos/projectdiscovery/httpx/releases/latest \
-        | grep '"tag_name"' | cut -d'"' -f4 | tr -d 'v' 2>/dev/null || echo "1.6.8")
-    install_binary "httpx" \
-        "https://github.com/projectdiscovery/httpx/releases/latest/download/httpx_${HTTPX_VER}_${ARCH}.zip" \
-        "httpx_${HTTPX_VER}_${ARCH}.zip" \
-        "httpx"
-else
-    ok "httpx already installed"
-fi
-
-# ── katana ──
-if ! command -v katana &>/dev/null; then
-    KAT_VER=$(curl -s https://api.github.com/repos/projectdiscovery/katana/releases/latest \
-        | grep '"tag_name"' | cut -d'"' -f4 | tr -d 'v' 2>/dev/null || echo "1.1.0")
-    install_binary "katana" \
-        "https://github.com/projectdiscovery/katana/releases/latest/download/katana_${KAT_VER}_${ARCH}.zip" \
-        "katana_${KAT_VER}_${ARCH}.zip" \
-        "katana"
-else
-    ok "katana already installed"
-fi
-
-# ── dnsx ──
-if ! command -v dnsx &>/dev/null; then
-    DNSX_VER=$(curl -s https://api.github.com/repos/projectdiscovery/dnsx/releases/latest \
-        | grep '"tag_name"' | cut -d'"' -f4 | tr -d 'v' 2>/dev/null || echo "1.2.1")
-    install_binary "dnsx" \
-        "https://github.com/projectdiscovery/dnsx/releases/latest/download/dnsx_${DNSX_VER}_${ARCH}.zip" \
-        "dnsx_${DNSX_VER}_${ARCH}.zip" \
-        "dnsx"
-else
-    ok "dnsx already installed"
-fi
-
-# ── assetfinder ──
-if ! command -v assetfinder &>/dev/null; then
-    install_binary "assetfinder" \
-        "https://github.com/tomnomnom/assetfinder/releases/download/v0.1.1/assetfinder-linux-amd64-0.1.1.tgz" \
-        "assetfinder-linux-amd64-0.1.1.tgz" \
-        "assetfinder"
-else
+# ── 5. assetfinder ────────────────────────────────────────────
+if command -v assetfinder &>/dev/null; then
     ok "assetfinder already installed"
-fi
-
-# ── gowitness ──
-if ! command -v gowitness &>/dev/null; then
-    GW_VER=$(curl -s https://api.github.com/repos/sensepost/gowitness/releases/latest \
-        | grep '"tag_name"' | cut -d'"' -f4 | tr -d 'v' 2>/dev/null || echo "3.0.5")
-    install_binary "gowitness" \
-        "https://github.com/sensepost/gowitness/releases/latest/download/gowitness-${GW_VER}-linux-amd64" \
-        "gowitness-${GW_VER}-linux-amd64" \
-        "gowitness-${GW_VER}-linux-amd64"
-    # gowitness is a single binary, not an archive — handle separately
-    if ! command -v gowitness &>/dev/null; then
-        GW_BIN="gowitness-${GW_VER}-linux-amd64"
-        wget -q "https://github.com/sensepost/gowitness/releases/latest/download/${GW_BIN}" \
-            -O /tmp/gowitness 2>/dev/null && \
-            chmod +x /tmp/gowitness && \
-            sudo mv /tmp/gowitness /usr/local/bin/gowitness && \
-            ok "gowitness installed" || warn "gowitness install failed"
+else
+    step "Installing assetfinder..."
+    ASSETFINDER_URL="https://github.com/tomnomnom/assetfinder/releases/download/v0.1.1/assetfinder-linux-amd64-0.1.1.tgz"
+    tmp=$(mktemp -d)
+    if wget -q --timeout=30 "$ASSETFINDER_URL" -O "$tmp/assetfinder.tgz" 2>/dev/null; then
+        tar -xzf "$tmp/assetfinder.tgz" -C "$tmp" 2>/dev/null || true
+        bin=$(find "$tmp" -name "assetfinder" -type f | head -1)
+        if [[ -n "$bin" ]]; then
+            chmod +x "$bin"
+            sudo mv "$bin" /usr/local/bin/assetfinder
+            ok "assetfinder installed"
+        else
+            warn "assetfinder binary not found in archive"
+        fi
+    else
+        warn "assetfinder download failed"
     fi
-else
+    rm -rf "$tmp"
+fi
+
+# ── 6. gowitness (single binary) ──────────────────────────────
+if command -v gowitness &>/dev/null; then
     ok "gowitness already installed"
-fi
-
-# ── amass (Kali has it in repos) ──
-if ! command -v amass &>/dev/null; then
-    step "Installing amass..."
-    sudo apt-get install -y -qq amass 2>/dev/null && ok "amass installed" \
-        || warn "amass not in repos — skipping (subfinder covers passive recon)"
 else
-    ok "amass already installed"
+    step "Installing gowitness v${GW_VER}..."
+    GW_BIN="gowitness-linux-amd64"
+    GW_URL="https://github.com/sensepost/gowitness/releases/download/${GW_VER}/${GW_BIN}"
+    if wget -q --timeout=60 "$GW_URL" -O /tmp/gowitness 2>/dev/null; then
+        chmod +x /tmp/gowitness
+        sudo mv /tmp/gowitness /usr/local/bin/gowitness
+        ok "gowitness installed"
+    else
+        # Try go install as last resort
+        if command -v go &>/dev/null; then
+            go install github.com/sensepost/gowitness@latest 2>/dev/null \
+                && ok "gowitness installed via go install" \
+                || warn "gowitness install failed — screenshots fall back to chromium"
+        else
+            warn "gowitness install failed — screenshots fall back to chromium"
+        fi
+    fi
 fi
 
-# ── 5. Python virtual environment ─────────────────────────────
-step "Creating Python virtual environment..."
+# ── 7. amass ──────────────────────────────────────────────────
+if command -v amass &>/dev/null; then
+    ok "amass already installed"
+else
+    step "Installing amass..."
+    sudo apt-get install -y -qq amass 2>/dev/null \
+        && ok "amass installed" \
+        || warn "amass not available — subfinder covers passive recon"
+fi
+
+# ── 8. theHarvester ───────────────────────────────────────────
+if command -v theHarvester &>/dev/null; then
+    ok "theHarvester already installed"
+else
+    step "Installing theHarvester..."
+    sudo apt-get install -y -qq theharvester 2>/dev/null \
+        && ok "theHarvester installed" \
+        || {
+            git clone -q https://github.com/laramies/theHarvester /opt/theHarvester 2>/dev/null || true
+            if [[ -d /opt/theHarvester ]]; then
+                pip install -q -r /opt/theHarvester/requirements/base.txt 2>/dev/null || true
+                sudo ln -sf /opt/theHarvester/theHarvester.py /usr/local/bin/theHarvester
+                ok "theHarvester installed from source"
+            else
+                warn "theHarvester install failed — email harvesting will use passive methods"
+            fi
+        }
+fi
+
+# ── 9. Python virtual environment ─────────────────────────────
+step "Setting up Python virtual environment..."
 python3 -m venv venv
 source venv/bin/activate
-ok "venv at: $(pwd)/venv"
+ok "venv: $(pwd)/venv"
 
 step "Installing Python dependencies..."
 pip install --quiet --upgrade pip
 pip install --quiet -r requirements.txt
 ok "Python packages installed"
 
-# ── 6. theHarvester (Kali has it pre-installed) ───────────────
-if command -v theHarvester &>/dev/null; then
-    ok "theHarvester already installed"
-else
-    step "Installing theHarvester..."
-    if $IS_KALI; then
-        sudo apt-get install -y -qq theharvester 2>/dev/null && ok "theHarvester installed" \
-            || warn "theHarvester not found — install: sudo apt install theharvester"
-    else
-        git clone -q https://github.com/laramies/theHarvester /opt/theHarvester 2>/dev/null || true
-        if [ -d /opt/theHarvester ]; then
-            pip install -q -r /opt/theHarvester/requirements/base.txt
-            sudo ln -sf /opt/theHarvester/theHarvester.py /usr/local/bin/theHarvester
-            ok "theHarvester installed"
-        fi
-    fi
-fi
-
-# ── 7. Nuclei templates ───────────────────────────────────────
+# ── 10. Nuclei templates ──────────────────────────────────────
 if command -v nuclei &>/dev/null; then
     step "Updating Nuclei templates..."
-    nuclei -update-templates -silent 2>/dev/null && ok "Nuclei templates updated" \
-        || warn "Nuclei template update skipped (no internet or already fresh)"
+    nuclei -update-templates -silent 2>/dev/null \
+        && ok "Nuclei templates updated" \
+        || warn "Template update skipped (run: nuclei -update-templates)"
 fi
 
-# ── 8. Output directories ─────────────────────────────────────
+# ── 11. Output directories ────────────────────────────────────
 step "Creating output directories..."
 mkdir -p output/{reports,screenshots,crawl,nmap,vuln} logs
-ok "Output directories created"
+ok "Output directories ready"
 
-# ── 9. Verification ───────────────────────────────────────────
+# ── 12. Final verification ────────────────────────────────────
 echo ""
-echo -e "${CYAN}${BOLD}── Verification ─────────────────────────────${RESET}"
+echo -e "${CYAN}${BOLD}── Tool Verification ────────────────────────${RESET}"
 
-tools=(
-    "python3:required"
-    "nmap:required"
-    "whois:required"
-    "subfinder:recommended"
-    "nuclei:recommended"
-    "katana:optional"
-    "assetfinder:optional"
-    "gowitness:optional"
-    "amass:optional"
-    "theHarvester:optional"
+declare -A TOOL_LEVEL=(
+    [python3]="required"
+    [nmap]="required"
+    [whois]="required"
+    [subfinder]="recommended"
+    [nuclei]="recommended"
+    [katana]="optional"
+    [dnsx]="optional"
+    [assetfinder]="optional"
+    [gowitness]="optional"
+    [amass]="optional"
+    [theHarvester]="optional"
 )
 
-all_required=true
-for entry in "${tools[@]}"; do
-    tool="${entry%%:*}"
-    level="${entry##*:}"
+all_ok=true
+for tool in python3 nmap whois subfinder nuclei katana dnsx assetfinder gowitness amass theHarvester; do
+    level="${TOOL_LEVEL[$tool]}"
     if command -v "$tool" &>/dev/null; then
         ok "$tool"
     else
-        if [[ "$level" == "required" ]]; then
-            err "$tool NOT found — REQUIRED, install manually"
-            all_required=false
-        elif [[ "$level" == "recommended" ]]; then
-            warn "$tool NOT found — recommended (core vuln scan will be limited)"
-        else
-            warn "$tool NOT found — optional (graceful degradation enabled)"
-        fi
+        case "$level" in
+            required)
+                err "$tool NOT found — REQUIRED"
+                all_ok=false ;;
+            recommended)
+                warn "$tool NOT found — recommended (some features limited)" ;;
+            *)
+                warn "$tool NOT found — optional (graceful degradation active)" ;;
+        esac
     fi
 done
 
 echo ""
 echo -e "${GREEN}${BOLD}══════════════════════════════════════════════${RESET}"
-if $all_required; then
-    echo -e "${GREEN}${BOLD}  Shaheen 3 setup complete!${RESET}"
-else
-    echo -e "${YELLOW}${BOLD}  Shaheen 3 setup done (some required tools missing — see above)${RESET}"
-fi
+$all_ok && echo -e "${GREEN}${BOLD}  Shaheen 3 setup complete!${RESET}" \
+         || echo -e "${YELLOW}${BOLD}  Setup done — some tools missing (see above)${RESET}"
 echo ""
-echo "  Activate venv   :  source venv/bin/activate"
-echo "  Quick scan      :  python3 shaheen3.py -d example.com"
-echo "  Full scan       :  python3 shaheen3.py -d example.com --full"
-echo "  Fast mode       :  python3 shaheen3.py -d example.com --fast"
-echo "  REST API        :  python3 shaheen3.py --api"
+echo "  Activate venv  :  source venv/bin/activate"
+echo "  Quick scan     :  python3 shaheen3.py -d example.com"
+echo "  Full scan      :  python3 shaheen3.py -d example.com --full"
+echo "  Fast scan      :  python3 shaheen3.py -d example.com --fast"
+echo "  REST API       :  python3 shaheen3.py --api"
 echo -e "${GREEN}${BOLD}══════════════════════════════════════════════${RESET}"
