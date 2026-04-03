@@ -150,25 +150,56 @@ else
     rm -rf "$tmp"
 fi
 
-# ── 6. gowitness (single binary) ──────────────────────────────
+# ── 6. gowitness ──────────────────────────────────────────────
 if command -v gowitness &>/dev/null; then
     ok "gowitness already installed"
 else
-    step "Installing gowitness v${GW_VER}..."
-    GW_BIN="gowitness-linux-amd64"
-    GW_URL="https://github.com/sensepost/gowitness/releases/download/${GW_VER}/${GW_BIN}"
-    if wget -q --timeout=60 "$GW_URL" -O /tmp/gowitness 2>/dev/null; then
-        chmod +x /tmp/gowitness
-        sudo mv /tmp/gowitness /usr/local/bin/gowitness
-        ok "gowitness installed"
-    else
-        # Try go install as last resort
+    step "Installing gowitness..."
+    GW_INSTALLED=false
+
+    # gowitness v3.x uses zip archives with a versioned binary name
+    # Try several known URL patterns across v2 and v3 releases
+    GW_URLS=(
+        "https://github.com/sensepost/gowitness/releases/download/3.0.5/gowitness-3.0.5-linux-amd64.zip"
+        "https://github.com/sensepost/gowitness/releases/download/3.0.5/gowitness-linux-amd64"
+        "https://github.com/sensepost/gowitness/releases/download/2.5.1/gowitness-2.5.1-linux-amd64"
+        "https://github.com/sensepost/gowitness/releases/download/2.4.2/gowitness-2.4.2-linux-amd64"
+    )
+
+    tmp=$(mktemp -d)
+    for url in "${GW_URLS[@]}"; do
+        fname=$(basename "$url")
+        if wget -q --timeout=60 "$url" -O "$tmp/$fname" 2>/dev/null; then
+            if [[ "$fname" == *.zip ]]; then
+                unzip -q "$tmp/$fname" -d "$tmp" 2>/dev/null || true
+                bin=$(find "$tmp" -name "gowitness*" ! -name "*.zip" -type f | head -1)
+            else
+                bin="$tmp/$fname"
+            fi
+            if [[ -n "$bin" ]] && [[ -f "$bin" ]]; then
+                chmod +x "$bin"
+                sudo mv "$bin" /usr/local/bin/gowitness
+                ok "gowitness installed from $(basename $url)"
+                GW_INSTALLED=true
+                break
+            fi
+        fi
+    done
+    rm -rf "$tmp"
+
+    # Last resort: apt or go install
+    if ! $GW_INSTALLED; then
+        sudo apt-get install -y -qq gowitness 2>/dev/null \
+            && ok "gowitness installed via apt" \
+            && GW_INSTALLED=true
+    fi
+    if ! $GW_INSTALLED; then
         if command -v go &>/dev/null; then
-            go install github.com/sensepost/gowitness@latest 2>/dev/null \
+            GOFLAGS=-mod=mod go install github.com/sensepost/gowitness@latest 2>/dev/null \
                 && ok "gowitness installed via go install" \
-                || warn "gowitness install failed — screenshots fall back to chromium"
+                || warn "gowitness install failed — screenshots will use chromium headless"
         else
-            warn "gowitness install failed — screenshots fall back to chromium"
+            warn "gowitness not installed — screenshots will use chromium headless (that's fine)"
         fi
     fi
 fi
